@@ -1,219 +1,318 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>ESP32 Weight Monitor</title>
+  <meta charset="UTF-8">
+  <title>Smart Bin Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600&display=swap" rel="stylesheet">
   <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: Arial, sans-serif;
-      text-align: center;
-      padding: 1em;
-      margin: auto;
-      max-width: 600px;
-      background-color: white;
-      color: black;
-      transition: 0.3s;
+      font-family: 'Outfit', sans-serif;
+      background: linear-gradient(to right, #e0f7fa, #ffffff);
+      color: #333;
+      transition: background 0.3s ease;
     }
-
-    body.dark {
-      background-color: #121212;
-      color: #f0f0f0;
+    .sidebar {
+      position: fixed; top: 0; left: 0; width: 240px; height: 100%;
+      background: #1e293b; color: #cbd5e1;
+      display: flex; flex-direction: column; gap: 10px;
+      padding: 1rem 0;
     }
-
-    #weight {
-      font-size: 2em;
-      margin: 20px 0;
-    }
-
-    #status {
-      font-size: 1.5em;
-      margin-bottom: 10px;
-    }
-
-    .green { color: green; }
-    .yellow { color: orange; }
-    .red { color: red; }
-
-    canvas {
-      max-width: 100%;
-      height: auto;
-    }
-
-    button {
-      padding: 10px 20px;
-      margin: 10px 5px;
-      font-size: 1em;
-      border-radius: 5px;
-      border: none;
-      background-color: #007bff;
-      color: white;
-      cursor: pointer;
-      width: 100%;
-      max-width: 200px;
-    }
-
-    button:hover {
-      background-color: #0056b3;
-    }
-
-    #historyStats {
-      margin: 10px;
-      font-size: 1em;
-    }
-
-    /* FILL LEVEL BAR */
-    #levelContainer {
-      width: 80%;
-      height: 250px;
-      border: 2px solid #ccc;
-      border-radius: 10px;
-      margin: 20px auto;
-      position: relative;
-      background: #f1f1f1;
-      overflow: hidden;
-    }
-
-    #levelBar {
-      position: absolute;
-      bottom: 0;
-      width: 100%;
-      height: 0%;
-      background: linear-gradient(to top, #4caf50, #8bc34a);
-      transition: height 0.5s ease;
+    .sidebar a {
+      padding: 12px 20px;
+      color: inherit;
+      text-decoration: none;
       display: flex;
-      align-items: flex-end;
-      justify-content: center;
+      align-items: center;
+      gap: 12px;
+      transition: background 0.2s ease;
     }
-
-    #levelLabel {
-      padding: 5px;
-      font-weight: bold;
+    .sidebar a:hover {
+      background: #334155;
+    }
+    .main-content {
+      margin-left: 240px;
+      padding: 1rem;
+    }
+    .navbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 1rem 1.5rem;
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    .navbar h2 {
+      font-size: 1.5rem;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.25rem;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+      transition: transform 0.3s ease;
+    }
+    .card:hover {
+      transform: translateY(-5px);
+    }
+    button {
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    .btn-primary {
+      background: #0ea5e9;
       color: white;
+    }
+    .btn-primary:hover {
+      background: #0284c7;
+    }
+    .btn-secondary {
+      background: #10b981;
+      color: white;
+    }
+    .btn-secondary:hover {
+      background: #059669;
+    }
+    canvas {
+      width: 100%;
+      height: 180px;
+    }
+    .toast {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      background: #dc2626;
+      color: white;
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      display: none;
+    }
+    .led-indicator {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      margin: 0 auto;
+      background: #cbd5e1;
+      transition: background 0.5s;
+    }
+    @media (max-width: 600px) {
+      .main-content {
+        margin-left: 0;
+      }
+      .sidebar {
+        display: none;
+      }
     }
   </style>
 </head>
 <body>
-
-  <h1>Smart Bin level</h1>
-  <div id="weight">Loading weight...</div>
-  <div id="status">Connecting to MQTT...</div>
-
-  <!-- Fill level bar -->
-  <div id="levelContainer">
-    <div id="levelBar"><span id="levelLabel">0%</span></div>
+  <div class="sidebar">
+    <a href="#"><i class="fa fa-tachometer-alt"></i> Dashboard</a>
+    <a href="#"><i class="fa fa-chart-line"></i> History</a>
+    <a href="#"><i class="fa fa-cog"></i> Settings</a>
   </div>
-
-  <!-- Chart -->
-  <canvas id="weightChart" width="400" height="200"></canvas>
-  <div id="historyStats"></div>
-
-  <!-- Buttons -->
-  <div>
-    <button onclick="sendCommand('start')">Start</button>
-    <button onclick="sendCommand('stop')">Stop</button>
-    <button onclick="sendCommand('calibrate')">Calibrate</button>
-    <button onclick="toggleTheme()">🌗 Toggle Dark Mode</button>
+  <div class="main-content">
+    <div class="navbar">
+      <h2>Smart Bin Monitor</h2>
+      <button class="btn-secondary" onclick="toggleTheme()"><i id="themeIcon" class="fa fa-sun"></i></button>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <h3>Current Weight</h3>
+        <canvas id="weightGauge"></canvas>
+        <p id="weightText" style="text-align:center; font-size:1.2rem;">-- g</p>
+      </div>
+      <div class="card">
+        <h3>Weight Trend</h3>
+        <canvas id="weightTrend"></canvas>
+      </div>
+      <div class="card">
+        <h3>Fill Level</h3>
+        <div style="height: 200px; position: relative; background: #e2e8f0; border-radius: 12px;">
+          <div id="fillLevel" style="height: 100%; width: 0%; background: linear-gradient(to right, #10b981, #22d3ee); border-radius: 12px; transition: width 1s;"></div>
+          <p id="levelText" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-weight:600;">0%</p>
+        </div>
+      </div>
+      <div class="card">
+        <h3>LED Status</h3>
+        <div class="led-indicator" id="ledIndicator"></div>
+        <p id="ledText" style="text-align:center; margin-top:10px;">Unknown</p>
+      </div>
+      <div class="card">
+        <h3>Controls</h3>
+        <div style="display: flex; gap: 10px; justify-content: center; margin-top: 1rem;">
+          <button class="btn-primary" onclick="sendCommand('start')">Start</button>
+          <button class="btn-primary" onclick="sendCommand('stop')">Stop</button>
+          <button class="btn-primary" onclick="sendCommand('calibrate')">Calibrate</button>
+        </div>
+      </div>
+    </div>
   </div>
-
+  <div class="toast" id="toast">⚠️ Bin level is below threshold!</div>
   <script>
-    const weightDisplay = document.getElementById('weight');
-    const statusDisplay = document.getElementById('status');
-    const historyStats = document.getElementById('historyStats');
-    const weights = [];
+    const toast = document.getElementById('toast');
+    let weights = [];
+    const ledIndicator = document.getElementById('ledIndicator');
+    const ledText = document.getElementById('ledText');
 
-    // Chart setup
-    const ctx = document.getElementById('weightChart').getContext('2d');
-    const weightChart = new Chart(ctx, {
-      type: 'line',
+    const gauge = new Chart(document.getElementById('weightGauge'), {
+      type: 'doughnut',
       data: {
-        labels: [],
-        datasets: [{
-          label: 'Weight (g)',
-          data: [],
-          borderColor: 'blue',
-          backgroundColor: 'rgba(0, 0, 255, 0.1)',
-          tension: 0.3
-        }]
+        labels: ['Used', 'Remaining'],
+        datasets: [{ data: [0, 100], backgroundColor: ['#10b981', '#cbd5e1'], borderWidth: 0 }]
       },
       options: {
-        responsive: true,
-        scales: {
-          y: { beginAtZero: true }
-        }
+        cutout: '80%',
+        plugins: { tooltip: { enabled: false } }
       }
     });
 
-    function updateChart(weight) {
-      const time = new Date().toLocaleTimeString();
-      weights.push(weight);
-      weightChart.data.labels.push(time);
-      weightChart.data.datasets[0].data.push(weight);
+    const trend = new Chart(document.getElementById('weightTrend'), {
+      type: 'line',
+      data: { labels: [], datasets: [{ label: 'Weight', data: [], borderColor: '#0ea5e9', tension: 0.4 }] },
+      options: { responsive: true, scales: { y: { beginAtZero: true } } }
+    });
 
-      if (weights.length > 50) {
-        weights.shift();
-        weightChart.data.labels.shift();
-        weightChart.data.datasets[0].data.shift();
+    function updateDashboard(weight) {
+      gauge.data.datasets[0].data = [weight, Math.max(0, 900 - weight)];
+      gauge.update();
+      document.getElementById('weightText').textContent = weight.toFixed(1) + ' g';
+
+      const pct = Math.min(100, (weight / 900) * 100);
+      document.getElementById('fillLevel').style.width = pct + '%';
+      document.getElementById('levelText').textContent = Math.round(pct) + '%';
+
+      if (pct < 10) {
+        toast.style.display = 'block';
+        setTimeout(() => toast.style.display = 'none', 3000);
       }
 
-      const avg = (weights.reduce((a, b) => a + b, 0) / weights.length).toFixed(1);
-      const max = Math.max(...weights).toFixed(1);
-      const min = Math.min(...weights).toFixed(1);
-
-      historyStats.innerHTML = `<strong>Avg:</strong> ${avg}g | <strong>Max:</strong> ${max}g | <strong>Min:</strong> ${min}g`;
-      weightChart.update();
+      const time = new Date().toLocaleTimeString();
+      weights.push(weight);
+      trend.data.labels.push(time);
+      trend.data.datasets[0].data.push(weight);
+      if (weights.length > 30) {
+        weights.shift();
+        trend.data.labels.shift();
+        trend.data.datasets[0].data.shift();
+      }
+      trend.update();
     }
 
-    function updateStatus(weight) {
-      let colorClass = '';
-      if (weight > 850) colorClass = 'green';
-      else if (weight > 450) colorClass = 'yellow';
-      else colorClass = 'red';
-
-      weightDisplay.textContent = `Weight: ${weight.toFixed(1)} g`;
-      weightDisplay.className = colorClass;
-
-      // LEVEL BAR animation
-      let level = Math.min(100, Math.max(0, (weight / 900) * 100));
-      document.getElementById('levelBar').style.height = `${level}%`;
-      document.getElementById('levelLabel').textContent = `${Math.round(level)}%`;
-    }
-
-    function toggleTheme() {
-      document.body.classList.toggle('dark');
+    function updateLedStatus(color) {
+      const colorMap = {
+        red: '#ef4444',
+        yellow: '#facc15',
+        green: '#22c55e'
+      };
+      ledIndicator.style.background = colorMap[color] || '#cbd5e1';
+      ledText.textContent = color.charAt(0).toUpperCase() + color.slice(1);
     }
 
     function sendCommand(cmd) {
       if (client && client.connected) {
         client.publish('bin/control', cmd);
-        alert('Command sent: ' + cmd);
-      } else {
-        alert('MQTT not connected.');
       }
     }
 
-    // MQTT Setup
     const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
-
-    client.on('connect', function () {
-      statusDisplay.textContent = '✅ Connected to MQTT';
+    client.on('connect', () => {
       client.subscribe('bin/weight');
+      client.subscribe('bin/status');
     });
-
-    client.on('message', function (topic, message) {
+    client.on('message', (topic, msg) => {
       if (topic === 'bin/weight') {
         try {
-          const data = JSON.parse(message.toString());
+          const data = JSON.parse(msg.toString());
           const weight = parseFloat(data.weight);
-          updateStatus(weight);
-          updateChart(weight);
+          updateDashboard(weight);
         } catch (e) {
-          console.error("JSON Parse Error:", e);
+          console.error('Parse error:', e);
+        }
+      }
+      if (topic === 'bin/status') {
+        try {
+          const data = JSON.parse(msg.toString());
+          if (data.light) updateLedStatus(data.light);
+        } catch (e) {
+          console.error('LED parse error:', e);
         }
       }
     });
-  </script>
 
+    function toggleTheme() {
+      document.body.classList.toggle('dark');
+      const icon = document.getElementById('themeIcon');
+      icon.classList.toggle('fa-sun');
+      icon.classList.toggle('fa-moon');
+    }
+<!-- ... (existing HTML above remains unchanged) -->
+
+<!-- Add this inside <body> before </body> -->
+<div style="position: fixed; bottom: 1rem; right: 1rem; background: #1e293b; color: white; padding: 1rem; border-radius: 10px; max-width: 300px; font-size: 0.9rem; z-index: 999; box-shadow: 0 2px 10px rgba(0,0,0,0.3);" id="logBox">
+  <strong>MQTT Logs:</strong>
+  <div id="logOutput" style="margin-top: 0.5rem; max-height: 150px; overflow-y: auto;"></div>
+</div>
+
+<script>
+// Add log helper
+function logMessage(msg) {
+  const log = document.getElementById('logOutput');
+  const p = document.createElement('p');
+  p.textContent = msg;
+  log.appendChild(p);
+  log.scrollTop = log.scrollHeight;
+}
+
+// Extend existing MQTT client listener to include logging
+client.on('message', (topic, msg) => {
+  logMessage(`[${topic}] ${msg.toString()}`);
+
+  if (topic === 'bin/weight') {
+    try {
+      const data = JSON.parse(msg.toString());
+      const weight = parseFloat(data.weight);
+      updateDashboard(weight);
+    } catch (e) {
+      console.error('Parse error:', e);
+      logMessage('Error parsing weight data.');
+    }
+  }
+
+  if (topic === 'bin/status') {
+    try {
+      const data = JSON.parse(msg.toString());
+      if (data.light) {
+        updateLedStatus(data.light);
+      } else {
+        logMessage('Missing "light" field in status.');
+      }
+    } catch (e) {
+      console.error('LED parse error:', e);
+      logMessage('Error parsing LED status.');
+    }
+  }
+});
+</script>
+
+  </script>
 </body>
 </html>
