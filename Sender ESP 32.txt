@@ -5,32 +5,32 @@
 #include "HX711.h"
 #include <Preferences.h>
 
-// ========== WiFi & MQTT ==========
+// WiFi & MQTT
 const char* ssid = "Denura 4G 860";
 const char* password = "Denura@2002";
 const char* mqtt_server = "broker.hivemq.com";
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-// ========== LCD ==========
+
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
-// ========== HX711 & Load Cells ==========
+
 HX711 scale[4];
 #define DOUT_PINS {5, 19, 18, 32}
 #define SCK_PINS  {4, 21, 22, 25}
 
 float calibrationFactors[4];  // Stored in Preferences
 
-// ========== Indicators ==========
+
 int greenPins[] = {13, 12, 14, 27};
 int yellowPins[] = {26, 33, 15, 2};
 int redPins[] = {0, 16, 17, 23};
 
-// ========== Storage ==========
+
 Preferences preferences;
 
-// ========== Bin Logic ==========
+
 float weight[4];
 String status[4];
 
@@ -50,20 +50,20 @@ void reconnect() {
 void setup() {
   Serial.begin(115200);
 
-  // LCD
+ 
   lcd.init();
   lcd.backlight();
 
-  // Load cell pin arrays
+ 
   const int dout[] = DOUT_PINS;
   const int sck[] = SCK_PINS;
 
-  // Init load cells
+ 
   for (int i = 0; i < 4; i++) {
     scale[i].begin(dout[i], sck[i]);
   }
 
-  // Retrieve calibration
+ 
   preferences.begin("weights", false);
   for (int i = 0; i < 4; i++) {
     calibrationFactors[i] = preferences.getFloat(("cal" + String(i)).c_str(), 1.0);
@@ -72,7 +72,7 @@ void setup() {
   }
   preferences.end();
 
-  // LED pins
+
   for (int i = 0; i < 4; i++) {
     pinMode(greenPins[i], OUTPUT);
     pinMode(yellowPins[i], OUTPUT);
@@ -92,9 +92,9 @@ void loop() {
 
   for (int i = 0; i < 4; i++) {
     weight[i] = scale[i].get_units();
-    weight[i] = weight[i] < 0 ? 0 : weight[i]; // Prevent negatives
+    weight[i] = weight[i] < 0 ? 0 : weight[i];
 
-    // Determine status
+    
     if (weight[i] < 0.45) {
       status[i] = "EMPTY";
       digitalWrite(redPins[i], HIGH);
@@ -116,7 +116,7 @@ void loop() {
     client.publish(("bin" + String(i) + "/weight").c_str(), String(weight[i]).c_str(), true);
     client.publish(("bin" + String(i) + "/status").c_str(), status[i].c_str(), true);
 
-    // Print to LCD
+    
     int fillPercent = min(100, int((weight[i] / 1.0) * 100)); // 1kg max
     int bars = map(fillPercent, 0, 100, 0, 10);
     String bar = String("==========").substring(0, bars);
@@ -130,5 +130,5 @@ void loop() {
     lcd.print(bar);
   }
 
-  delay(2000); // Update every 2 sec
+  delay(2000); 
 }
