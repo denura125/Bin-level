@@ -105,14 +105,6 @@
       box-shadow: 0 2px 10px rgba(0,0,0,0.2);
       display: none;
     }
-    .led-indicator {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      margin: 0 auto;
-      background: #cbd5e1;
-      transition: background 0.5s;
-    }
     @media (max-width: 600px) {
       .main-content {
         margin-left: 0;
@@ -152,11 +144,6 @@
         </div>
       </div>
       <div class="card">
-        <h3>LED Status</h3>
-        <div class="led-indicator" id="ledIndicator"></div>
-        <p id="ledText" style="text-align:center; margin-top:10px;">Unknown</p>
-      </div>
-      <div class="card">
         <h3>Controls</h3>
         <div style="display: flex; gap: 10px; justify-content: center; margin-top: 1rem;">
           <button class="btn-primary" onclick="sendCommand('start')">Start</button>
@@ -170,8 +157,6 @@
   <script>
     const toast = document.getElementById('toast');
     let weights = [];
-    const ledIndicator = document.getElementById('ledIndicator');
-    const ledText = document.getElementById('ledText');
 
     const gauge = new Chart(document.getElementById('weightGauge'), {
       type: 'doughnut',
@@ -217,16 +202,6 @@
       trend.update();
     }
 
-    function updateLedStatus(color) {
-      const colorMap = {
-        red: '#ef4444',
-        yellow: '#facc15',
-        green: '#22c55e'
-      };
-      ledIndicator.style.background = colorMap[color] || '#cbd5e1';
-      ledText.textContent = color.charAt(0).toUpperCase() + color.slice(1);
-    }
-
     function sendCommand(cmd) {
       if (client && client.connected) {
         client.publish('bin/control', cmd);
@@ -234,10 +209,7 @@
     }
 
     const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
-    client.on('connect', () => {
-      client.subscribe('bin/weight');
-      client.subscribe('bin/status');
-    });
+    client.on('connect', () => client.subscribe('bin/weight'));
     client.on('message', (topic, msg) => {
       if (topic === 'bin/weight') {
         try {
@@ -248,14 +220,6 @@
           console.error('Parse error:', e);
         }
       }
-      if (topic === 'bin/status') {
-        try {
-          const data = JSON.parse(msg.toString());
-          if (data.light) updateLedStatus(data.light);
-        } catch (e) {
-          console.error('LED parse error:', e);
-        }
-      }
     });
 
     function toggleTheme() {
@@ -264,55 +228,6 @@
       icon.classList.toggle('fa-sun');
       icon.classList.toggle('fa-moon');
     }
-<!-- ... (existing HTML above remains unchanged) -->
-
-<!-- Add this inside <body> before </body> -->
-<div style="position: fixed; bottom: 1rem; right: 1rem; background: #1e293b; color: white; padding: 1rem; border-radius: 10px; max-width: 300px; font-size: 0.9rem; z-index: 999; box-shadow: 0 2px 10px rgba(0,0,0,0.3);" id="logBox">
-  <strong>MQTT Logs:</strong>
-  <div id="logOutput" style="margin-top: 0.5rem; max-height: 150px; overflow-y: auto;"></div>
-</div>
-
-<script>
-// Add log helper
-function logMessage(msg) {
-  const log = document.getElementById('logOutput');
-  const p = document.createElement('p');
-  p.textContent = msg;
-  log.appendChild(p);
-  log.scrollTop = log.scrollHeight;
-}
-
-// Extend existing MQTT client listener to include logging
-client.on('message', (topic, msg) => {
-  logMessage(`[${topic}] ${msg.toString()}`);
-
-  if (topic === 'bin/weight') {
-    try {
-      const data = JSON.parse(msg.toString());
-      const weight = parseFloat(data.weight);
-      updateDashboard(weight);
-    } catch (e) {
-      console.error('Parse error:', e);
-      logMessage('Error parsing weight data.');
-    }
-  }
-
-  if (topic === 'bin/status') {
-    try {
-      const data = JSON.parse(msg.toString());
-      if (data.light) {
-        updateLedStatus(data.light);
-      } else {
-        logMessage('Missing "light" field in status.');
-      }
-    } catch (e) {
-      console.error('LED parse error:', e);
-      logMessage('Error parsing LED status.');
-    }
-  }
-});
-</script>
-
   </script>
 </body>
 </html>
