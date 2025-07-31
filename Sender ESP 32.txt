@@ -1,0 +1,134 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include "HX711.h"
+#include <Preferences.h>
+
+// ========== WiFi & MQTT ==========
+const char* ssid = "Denura 4G 860";
+const char* password = "Denura@2002";
+const char* mqtt_server = "broker.hivemq.com";
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+// ========== LCD ==========
+LiquidCrystal_I2C lcd(0x27, 20, 4);
+
+// ========== HX711 & Load Cells ==========
+HX711 scale[4];
+#define DOUT_PINS {5, 19, 18, 32}
+#define SCK_PINS  {4, 21, 22, 25}
+
+float calibrationFactors[4];  // Stored in Preferences
+
+// ========== Indicators ==========
+int greenPins[] = {13, 12, 14, 27};
+int yellowPins[] = {26, 33, 15, 2};
+int redPins[] = {0, 16, 17, 23};
+
+// ========== Storage ==========
+Preferences preferences;
+
+// ========== Bin Logic ==========
+float weight[4];
+String status[4];
+
+void setupWiFi() {
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+  Serial.println("WiFi connected");
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    if (client.connect("ESP1Publisher")) break;
+    delay(1000);
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  // LCD
+  lcd.init();
+  lcd.backlight();
+
+  // Load cell pin arrays
+  const int dout[] = DOUT_PINS;
+  const int sck[] = SCK_PINS;
+
+  // Init load cells
+  for (int i = 0; i < 4; i++) {
+    scale[i].begin(dout[i], sck[i]);
+  }
+
+  // Retrieve calibration
+  preferences.begin("weights", false);
+  for (int i = 0; i < 4; i++) {
+    calibrationFactors[i] = preferences.getFloat(("cal" + String(i)).c_str(), 1.0);
+    scale[i].set_scale(calibrationFactors[i]);
+    scale[i].tare();
+  }
+  preferences.end();
+
+  // LED pins
+  for (int i = 0; i < 4; i++) {
+    pinMode(greenPins[i], OUTPUT);
+    pinMode(yellowPins[i], OUTPUT);
+    pinMode(redPins[i], OUTPUT);
+  }
+
+  // WiFi & MQTT
+  setupWiFi();
+  client.setServer(mqtt_server, 1883);
+}
+
+void loop() {
+  if (!client.connected()) reconnect();
+  client.loop();
+
+  lcd.clear();
+
+  for (int i = 0; i < 4; i++) {
+    weight[i] = scale[i].get_units();
+    weight[i] = weight[i] < 0 ? 0 : weight[i]; // Prevent negatives
+
+    // Determine status
+    if (weight[i] < 0.45) {
+      status[i] = "EMPTY";
+      digitalWrite(redPins[i], HIGH);
+      digitalWrite(yellowPins[i], LOW);
+      digitalWrite(greenPins[i], LOW);
+    } else if (weight[i] < 0.85) {
+      status[i] = "MEDIUM";
+      digitalWrite(redPins[i], LOW);
+      digitalWrite(yellowPins[i], HIGH);
+      digitalWrite(greenPins[i], LOW);
+    } else {
+      status[i] = "FULL";
+      digitalWrite(redPins[i], LOW);
+      digitalWrite(yellowPins[i], LOW);
+      digitalWrite(greenPins[i], HIGH);
+    }
+
+    // Publish data
+    client.publish(("bin" + String(i) + "/weight").c_str(), String(weight[i]).c_str(), true);
+    client.publish(("bin" + String(i) + "/status").c_str(), status[i].c_str(), true);
+
+    // Print to LCD
+    int fillPercent = min(100, int((weight[i] / 1.0) * 100)); // 1kg max
+    int bars = map(fillPercent, 0, 100, 0, 10);
+    String bar = String("==========").substring(0, bars);
+
+    lcd.setCursor(0, i);
+    lcd.print("B" + String(i + 1) + ":");
+    lcd.print(weight[i], 2);
+    lcd.print("kg ");
+    lcd.print(status[i].substring(0, 1));
+    lcd.print(" ");
+    lcd.print(bar);
+  }
+
+  delay(2000); // Update every 2 sec
+}
